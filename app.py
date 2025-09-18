@@ -1,9 +1,11 @@
-from flask import Flask, render_template, url_for, request, redirect # type: ignore
+from flask import Flask, render_template, url_for, request, redirect
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+import os  # Fixed import
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI']='sqlite:///test.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///test.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False  # Reduces overhead
 db = SQLAlchemy(app)
 
 class ToDo(db.Model):
@@ -14,29 +16,31 @@ class ToDo(db.Model):
 
     def __repr__(self):
         return '<Task %r>' % self.id
-    
+
+# Create database tables
 with app.app_context():
     db.create_all()
-    
 
-@app.route('/',methods=['POST','GET'])
+@app.route('/', methods=['POST', 'GET'])
 def index():
     if request.method == 'POST':
         task_content = request.form['content']
-        new_task=ToDo(content=task_content)
+        if not task_content.strip():  # Prevent empty tasks
+            return redirect('/')
+            
+        new_task = ToDo(content=task_content)
 
         try:
             db.session.add(new_task)
             db.session.commit()
             return redirect('/')
-        except:
-            return "There was an Error"
-
+        except Exception as e:
+            return f"There was an error: {str(e)}", 500
 
     else:
         tasks = ToDo.query.order_by(ToDo.date_created).all()
-        return render_template('index.html',tasks=tasks)
-    
+        return render_template('index.html', tasks=tasks)
+
 @app.route('/delete/<int:id>')
 def delete(id):
     task_to_delete = ToDo.query.get_or_404(id)
@@ -45,26 +49,28 @@ def delete(id):
         db.session.delete(task_to_delete)
         db.session.commit()
         return redirect('/')
-    except:
-        return "An Error Occured"
+    except Exception as e:
+        return f"An error occurred: {str(e)}", 500
 
-@app.route('/update/<int:id>', methods=['GET','POST'])
+@app.route('/update/<int:id>', methods=['GET', 'POST'])
 def update(id):
     task = ToDo.query.get_or_404(id)
 
     if request.method == 'POST':
-        task.content = request.form['content'] 
+        task.content = request.form['content']
 
         try:
             db.session.commit()
             return redirect('/')
-        except:
-            return "Unexpected Error Occured"
+        except Exception as e:
+            return f"Unexpected error occurred: {str(e)}", 500
     
     else:
-        return render_template('update.html',task=task)
-    return ''
+        return render_template('update.html', task=task)
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    if 'PORT' in os.environ:
+        port = int(os.environ.get('PORT'))
+        app.run(host='0.0.0.0', port=port)
+    else:
+        app.run(debug=True)
